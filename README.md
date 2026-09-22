@@ -42,16 +42,35 @@ Rules of thumb:
 
 ## Scripts (run from the repo root)
 
-| Command | What it does |
-| --- | --- |
-| `pnpm install` | Install all workspace dependencies |
-| `pnpm dev` | Build `shared`, then run API + both web apps in watch mode |
-| `pnpm build` | Production build of every package, in dependency order |
-| `pnpm start` | Build, then run the built API and serve both web builds (`vite preview`) |
-| `pnpm typecheck` | Type-check every package |
-| `pnpm dev:api` / `dev:tenant` / `dev:admin` | Run one app (plus the packages it depends on) |
+| Command                                     | What it does                                                             |
+| ------------------------------------------- | ------------------------------------------------------------------------ |
+| `pnpm install`                              | Install all workspace dependencies                                       |
+| `pnpm dev`                                  | Build `shared`, then run API + both web apps in watch mode               |
+| `pnpm build`                                | Production build of every package, in dependency order                   |
+| `pnpm start`                                | Build, then run the built API and serve both web builds (`vite preview`) |
+| `pnpm typecheck`                            | Type-check every package                                                 |
+| `pnpm lint` / `lint:fix`                    | ESLint (type-aware) across the repo; warnings fail the run               |
+| `pnpm format` / `format:check`              | Prettier write / check across the repo                                   |
+| `pnpm dev:api` / `dev:tenant` / `dev:admin` | Run one app (plus the packages it depends on)                            |
 
 Run a script in one package directly with a filter, e.g. `pnpm --filter @bos/api build`.
+
+## Code quality
+
+- **TypeScript** — `tsconfig.base.json` enables `strict` plus `noUncheckedIndexedAccess`,
+  `noImplicitOverride`, `noImplicitReturns`, `noFallthroughCasesInSwitch` and
+  `noPropertyAccessFromIndexSignature` (so env vars are read as `process.env['PORT']`).
+- **ESLint** — flat config in `eslint.config.mjs`: `typescript-eslint` strict + stylistic
+  type-checked rules, React Hooks rules for the web apps, Nest-friendly tweaks for the API.
+- **Prettier** — `.prettierrc.json`; ESLint defers all formatting to it.
+- **Git hooks** (Husky, installed by `pnpm install`):
+  - `pre-commit` runs `lint-staged`: `prettier --check` + ESLint on staged files. Unformatted
+    code or any lint error/warning blocks the commit — run `pnpm format` / `pnpm lint:fix` and
+    re-stage.
+  - `commit-msg` runs commitlint with
+    [Conventional Commits](https://www.conventionalcommits.org), e.g.
+    `feat(sales): add deposit payments (BOS-051)`. Allowed types: `feat`, `fix`, `chore`,
+    `docs`, `refactor`, `test`, `perf`, `build`, `ci`, `style`, `revert`.
 
 ## Smoke test
 
@@ -69,5 +88,5 @@ correctly. You can also hit http://localhost:3000/api/health directly.
 
 ## What's next
 
-Tracked in `docs/bos-backlog.csv`: lint/format/hooks (BOS-002), Docker Compose for Postgres/Redis/Mailpit
+Tracked in `docs/bos-backlog.csv`: Docker Compose for Postgres/Redis/Mailpit
 (BOS-003), ORM + migrations (BOS-004), CI (BOS-005), typed config (BOS-007).

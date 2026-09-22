@@ -8,7 +8,7 @@ export class HealthController {
     return {
       status: 'ok',
       service: 'bos-api',
-      version: process.env.npm_package_version ?? '0.0.0',
+      version: process.env['npm_package_version'] ?? '0.0.0',
       time: new Date().toISOString(),
       knownModules: ALL_MODULES,
     };

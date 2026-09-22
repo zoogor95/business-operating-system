@@ -41,4 +41,4 @@ export type PermissionKey = ValuesOf<typeof PERMISSIONS>;
 
 export const ALL_PERMISSIONS: readonly PermissionKey[] = Object.values(PERMISSIONS).flatMap(
   (group) => Object.values(group),
-) as PermissionKey[];
+);
