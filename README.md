@@ -39,6 +39,28 @@ Rules of thumb:
 
 - Node.js 22+ (`.nvmrc`)
 - pnpm 10 — easiest via Corepack: `corepack enable` (the version is pinned in `package.json`)
+- Docker Desktop (or any Docker Engine with Compose v2) for the local stack
+
+## Local stack (Postgres, Redis, Mailpit)
+
+```bash
+cp .env.example .env   # once; Docker Compose and the API both read it
+pnpm infra:up          # docker compose up -d --wait
+```
+
+| Service     | Host address          | Notes                                       |
+| ----------- | --------------------- | ------------------------------------------- |
+| Postgres 16 | `localhost:5433`      | user / password / db: `bos` / `bos` / `bos` |
+| Redis 7     | `localhost:6379`      | append-only persistence                     |
+| Mailpit     | SMTP `localhost:1025` | catches every email the API sends in dev    |
+|             | http://localhost:8025 | web inbox                                   |
+
+Postgres is published on **5433**, not 5432, so it never collides with a Postgres installed
+directly on your machine. Data lives in named volumes (`bos_postgres-data`, `bos_redis-data`);
+`pnpm infra:down` stops the stack and keeps them, `pnpm infra:reset` deletes them.
+
+`GET /api/health` pings all three and reports each as `up` (with latency) or `down` (with the
+error); overall `status` is `degraded` if any is down. Both web apps show this on their start page.
 
 ## Scripts (run from the repo root)
 
@@ -52,6 +74,8 @@ Rules of thumb:
 | `pnpm lint` / `lint:fix`                    | ESLint (type-aware) across the repo; warnings fail the run               |
 | `pnpm format` / `format:check`              | Prettier write / check across the repo                                   |
 | `pnpm dev:api` / `dev:tenant` / `dev:admin` | Run one app (plus the packages it depends on)                            |
+| `pnpm infra:up` / `infra:down`              | Start (and wait for healthy) / stop the Docker stack                     |
+| `pnpm infra:reset` / `infra:logs`           | Stop the stack and delete its data volumes / follow container logs       |
 
 Run a script in one package directly with a filter, e.g. `pnpm --filter @bos/api build`.
 
@@ -74,7 +98,7 @@ Run a script in one package directly with a filter, e.g. `pnpm --filter @bos/api
 
 ## Smoke test
 
-After `pnpm dev`, open http://localhost:5173 and http://localhost:5174. Each page calls
+After `pnpm infra:up` and `pnpm dev`, open http://localhost:5173 and http://localhost:5174. Each page calls
 `GET /api/health` through the Vite dev proxy and lists the core modules imported from
 `@bos/shared` — if you see "✅ bos-api is up", all three apps and the shared package are wired
 correctly. You can also hit http://localhost:3000/api/health directly.
@@ -88,5 +112,5 @@ correctly. You can also hit http://localhost:3000/api/health directly.
 
 ## What's next
 
-Tracked in `docs/bos-backlog.csv`: Docker Compose for Postgres/Redis/Mailpit
-(BOS-003), ORM + migrations (BOS-004), CI (BOS-005), typed config (BOS-007).
+Tracked in `docs/bos-backlog.csv`: ORM + migrations (BOS-004), CI (BOS-005), typed config
+(BOS-007).
