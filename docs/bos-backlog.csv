@@ -1,0 +1,281 @@
+Issue ID,Summary,Issue Type,Priority,Story Points,Epic,Phase,Labels,Depends On,Description,Acceptance Criteria
+BOS-001,"Create monorepo (api, tenant-web, admin-web, shared packages)",Task,P0,2,Setup,P0 Project setup,P0 setup,,"pnpm/Turborepo (or Nx) monorepo with apps/api (NestJS), apps/tenant-web and apps/admin-web (React + Vite), packages/shared (types, event contracts, permission keys).","- All three apps build and start from one command
+- Shared package imported by api and both web apps
+- README documents layout and scripts"
+BOS-002,"Lint, format, commit hooks and TypeScript strict mode",Task,P1,1,Setup,P0 Project setup,P0 setup,BOS-001,"ESLint + Prettier + strict tsconfig across the repo, lint-staged on pre-commit, conventional commits.","- `pnpm lint` passes clean
+- Pre-commit hook blocks unformatted code"
+BOS-003,Docker Compose for Postgres 16 + Redis + Mailpit,Task,P0,1,Setup,P0 Project setup,P0 setup,BOS-001,Local stack with seeded .env.example. Mailpit catches outgoing email in dev.,"- `docker compose up` gives working Postgres, Redis and mail inbox
+- API connects using .env.example defaults"
+BOS-004,Choose ORM + migration tool and wire into NestJS,Spike,P0,2,Setup,P0 Project setup,P0 setup,BOS-003,"Decide between Prisma, Drizzle, TypeORM or Kysely. Must support raw SQL for RLS policies and SET LOCAL per transaction. Record decision as an ADR.","- ADR written in /docs/adr
+- First migration runs up and down
+- Transaction helper can execute `SET LOCAL app.current_tenant`"
+BOS-005,"CI pipeline: lint, typecheck, test, build",Task,P0,2,Setup,P0 Project setup,P0 setup,BOS-002,GitHub Actions running on every PR with a Postgres + Redis service container for integration tests.,"- PRs show green/red checks
+- Integration tests run against real Postgres in CI"
+BOS-006,"Test harness: unit, integration and e2e",Task,P1,3,Setup,P0 Project setup,P0 setup,"BOS-004, BOS-005","Jest/Vitest for units, Supertest integration tests with per-test DB transaction rollback, Playwright for web e2e. Factories for tenants/users.","- Sample test of each kind passes in CI
+- Test factories create a tenant + owner in one call"
+BOS-007,Typed config + secrets handling,Task,P1,1,Setup,P0 Project setup,P0 setup,BOS-001,@nestjs/config with zod validation; app refuses to boot on missing/invalid env.,- Missing required env var fails fast with clear message
+BOS-008,Architecture Decision Records + coding conventions doc,Task,P2,1,Setup,P0 Project setup,P0 setup,BOS-001,"Capture the core decisions already made (modular monolith, shared schema + RLS, vertical→core dependency rule) as ADRs.","- ADR-001..004 committed
+- CONTRIBUTING.md explains module boundaries"
+BOS-009,UI kit and design tokens for both web apps,Task,P1,3,Setup,P0 Project setup,P0 setup,BOS-001,"Pick a component library (e.g. shadcn/ui + Tailwind or Mantine), define tokens, layout shell, tables, forms, dialogs. Shared across tenant and admin apps.","- Storybook or equivalent showing core components
+- Both apps consume the same UI package"
+BOS-010,Tenants table + base entity conventions,Story,P0,2,Tenancy,P1 Foundations,P1 tenancy,BOS-004,"tenants(id, name, slug, business_type, status, timezone, currency, created_at). Base columns (id UUID, tenant_id, created_at/by, updated_at/by, deleted_at) for all tenant-scoped tables.","- Migration creates tenants
+- Base entity/mixin documented and used by a sample table"
+BOS-011,Postgres Row-Level Security on every tenant-scoped table,Story,P0,5,Tenancy,P1 Foundations,P1 tenancy,BOS-010,Non-superuser app DB role; RLS policy `tenant_id = current_setting('app.current_tenant')::uuid`; FORCE ROW LEVEL SECURITY. Migration helper that adds tenant_id + policy in one call.,"- App connects as a role without BYPASSRLS
+- Query without tenant context returns zero rows
+- Helper used by every new tenant table migration
+- Lint/CI check fails if a tenant table lacks a policy"
+BOS-012,Per-request tenant context (resolve → SET LOCAL),Story,P0,5,Tenancy,P1 Foundations,P1 tenancy,"BOS-011, BOS-015",Resolve tenant from JWT claim (and subdomain later). Interceptor opens a transaction and runs SET LOCAL app.current_tenant; AsyncLocalStorage exposes tenantId/userId to services.,"- Every tenant request runs inside a tenant-scoped transaction
+- Background jobs can run with an explicit tenant context
+- Connection pool never leaks a tenant setting between requests (test)"
+BOS-013,Cross-tenant isolation test suite,Task,P0,3,Tenancy,P1 Foundations,P1 tenancy,BOS-012,Automated tests creating two tenants and asserting no read/write crosses over for every tenant-scoped endpoint.,"- Test auto-discovers tenant tables and fails if any row leaks
+- Runs in CI on every PR"
+BOS-014,"Users, memberships and password auth",Story,P0,5,Identity,P1 Foundations,P1 identity,BOS-010,"users (global identity) + tenant_memberships(user_id, tenant_id, role_id, status). One user can belong to multiple tenants. Argon2 password hashing.","- User can sign up via invite and log in
+- Same email can be member of two tenants
+- Passwords hashed with argon2id"
+BOS-015,JWT access + refresh tokens with Redis session store,Story,P0,5,Identity,P1 Foundations,P1 identity,"BOS-014, BOS-003","Short-lived access token carrying user_id, tenant_id, membership_id; rotating refresh tokens stored in Redis for instant revocation.","- Refresh rotation with reuse detection
+- Logout revokes session immediately
+- Tenant switcher issues a new token for another membership"
+BOS-016,"Password reset, email verification and invites",Story,P1,3,Identity,P1 Foundations,P1 identity,BOS-015,Signed single-use tokens emailed via transactional mail provider; owner invites staff by email.,"- Reset link expires after 1 hour and single use
+- Invited user lands in the correct tenant"
+BOS-017,Optional TOTP two-factor for owners,Story,P3,3,Identity,P1 Foundations,P1 identity,BOS-015,TOTP enrolment with recovery codes; tenant setting to require MFA for owners/managers.,"- Owner can enable/disable TOTP
+- Recovery codes work once each"
+BOS-018,modules + tenant_modules tables with dependency graph,Story,P0,3,Module registry,P1 Foundations,P1 module-registry,BOS-010,"modules(key, name, category core|optional|vertical, depends_on[]); tenant_modules(tenant_id, module_key, enabled, config JSONB). Seed core module rows.","- Enabling a module auto-enables or rejects on missing dependencies
+- Disabling a module with dependents is rejected with a clear message"
+BOS-019,@RequiresModule decorator + TenantModuleGuard (Redis-cached),Story,P0,3,Module registry,P1 Foundations,P1 module-registry,"BOS-018, BOS-012","Every controller declares its module; the guard checks the tenant's enabled set from Redis key tenant:{id}:modules, refreshed on change.","- Calling a disabled module's route returns 403 MODULE_DISABLED
+- Cache invalidated within 1s of a module toggle
+- Controller without @RequiresModule fails a CI check"
+BOS-020,Module config schema + validation,Story,P1,2,Module registry,P1 Foundations,P1 module-registry,BOS-018,Each module registers a zod schema for its tenant_modules.config; settings API validates against it.,"- Invalid config rejected with field errors
+- Defaults applied when config is empty"
+BOS-021,"Permission keys, roles and role_permissions",Story,P0,3,Permissions,P1 Foundations,P1 permissions,BOS-014,"Code-defined permission catalogue (e.g. sales.order.create, sales.refund, inventory.adjust). roles + role_permissions per tenant. Seed Owner and Staff roles.","- Permission keys live in packages/shared and are type-safe
+- New tenant gets Owner + Staff roles"
+BOS-022,@Can permission guard + Redis permission cache,Story,P0,3,Permissions,P1 Foundations,P1 permissions,"BOS-021, BOS-019",Guard checks the membership's effective permissions (cached tenant:{id}:role:{rid}).,"- Missing permission returns 403 with the permission key
+- Role change reflected on next request"
+BOS-023,Domain event bus + event contracts,Story,P0,5,Domain events,P1 Foundations,P1 domain-events,BOS-001,"Typed event envelope (id, type, version, tenantId, occurredAt, actor, payload) in packages/shared. EventEmitter2 in-process now; handlers are idempotent by event id.","- OrderCompleted-style sample event emitted and handled in a test
+- Handler failure does not roll back the emitter's transaction
+- Event contracts versioned"
+BOS-024,Transactional outbox for reliable events,Story,P1,5,Domain events,P1 Foundations,P1 domain-events,BOS-023,Write events to an outbox table in the same transaction as the state change; a relay publishes them. Makes the later BullMQ/Kafka switch a transport change only.,"- Event is never published if the transaction rolls back
+- Relay retries until handled; processed events marked"
+BOS-025,Tenant activity log,Story,P1,3,Audit,P1 Foundations,P1 audit,BOS-012,"Append-only audit_log(tenant_id, actor, action, entity, entity_id, before/after JSON, ip, at) written by an interceptor/service for mutating actions.","- Create/update/delete of core entities produce audit rows
+- Audit rows cannot be updated or deleted by the app role"
+BOS-026,Document numbering sequences per tenant,Story,P1,2,Shared services,P1 Foundations,P1 shared-services,BOS-012,"Gap-safe, per-tenant counters for ORD-, INV-, RCPT-, PO- with configurable prefix and padding.","- Concurrent requests never produce duplicate numbers
+- Prefix configurable per tenant"
+BOS-027,File uploads to object storage,Story,P1,3,Shared services,P1 Foundations,P1 shared-services,BOS-012,"S3-compatible storage (S3/R2/MinIO locally) with tenant-prefixed keys and signed URLs; used for receipts, logos, product images.","- Upload + signed download works
+- Files of one tenant cannot be fetched by another"
+BOS-028,"Money, tax and rounding utilities",Task,P0,2,Shared services,P1 Foundations,P1 shared-services,BOS-001,"Integer minor units (sen) everywhere, currency per tenant, banker's vs half-up rounding decision, Malaysian 5-sen cash rounding helper.","- No floats for money anywhere (lint rule or type)
+- Rounding helper unit-tested"
+BOS-029,"API conventions: errors, pagination, filtering, OpenAPI",Task,P1,2,Shared services,P1 Foundations,P1 shared-services,BOS-001,"Standard error shape, cursor pagination, list filter/sort params, Swagger generated, typed client generated for the web apps.","- OpenAPI served at /docs
+- Web apps use a generated client"
+BOS-030,Idempotency keys for write endpoints,Story,P1,2,Shared services,P1 Foundations,P1 shared-services,BOS-003,Idempotency-Key header stored in Redis with the response; used on order/payment endpoints to survive flaky shop Wi-Fi.,- Replaying a request with the same key returns the original response and creates nothing
+BOS-031,"Tenant app shell, login and module-driven navigation",Story,P0,5,Tenant web app,P1 Foundations,P1 tenant-web-app,"BOS-015, BOS-019, BOS-009","On login fetch {tenant, enabledModules, permissions, businessType}; build sidebar and routes from it. Lazy-load module route chunks.","- Disabled module is absent from nav and its routes 404
+- <Can permission=...> component hides unauthorized actions
+- Tenant switcher for multi-tenant users"
+BOS-032,Platform admin app shell with separate auth,Story,P1,3,Platform admin app,P1 Foundations,P1 platform-admin-app,BOS-009,Separate React app; platform_admins table and auth stack independent of tenant users; no RLS bypass by default.,- Tenant credentials cannot log into admin app and vice versa
+BOS-033,"Business type templates (Optical, General Retail)",Story,P0,3,Tenancy,P1 Foundations,P1 tenancy,"BOS-018, BOS-021","business_type_templates rows holding default modules, module config, roles, tax settings, product categories and order workflow. Applied on tenant creation.","- Creating an Optical tenant yields the right modules, categories and workflow
+- Template can be re-applied to a blank tenant in dev"
+BOS-034,Tenant provisioning service + self-signup,Story,P0,3,Tenancy,P1 Foundations,P1 tenancy,"BOS-033, BOS-014","Single service that creates tenant, owner membership, roles, applies template and seeds numbering. Public signup form calls it.","- Signup to first login under 1 minute
+- Provisioning is transactional: failure leaves nothing behind"
+BOS-035,"Business settings: profile, logo, address, tax ID, timezone, currency",Story,P1,3,Tenancy,P1 Foundations,P1 tenancy,"BOS-034, BOS-027","Settings page + API for business profile used on receipts and invoices (SSM number, SST number, address).","- Settings appear on printed receipt
+- Timezone used for all date boundaries in reports"
+BOS-036,Branches/locations (single location in MVP),Story,P1,2,Tenancy,P1 Foundations,P1 tenancy,BOS-010,locations table with one default location; orders and stock reference location_id from day one so multi-location is not a retrofit.,"- Every order and stock row has a location_id
+- UI hides location picker while tenant has one location"
+BOS-037,Customer profiles CRUD + search,Story,P0,3,Customers,P2 Optical MVP,P2 customers,"BOS-031, BOS-022","Name, phone (E.164, Malaysian default), email, IC/DOB optional, address, notes. Fast search by name/phone; duplicate-phone warning.","- Create/edit/archive customer
+- Search returns results under 200ms for 10k customers
+- Duplicate phone warns before save"
+BOS-038,"Customer 360 page: orders, payments, balance, prescriptions",Story,P0,3,Customers,P2 Optical MVP,P2 customers,"BOS-037, BOS-047","Single page showing contact info, order history, outstanding balance, prescription history (if module enabled) and notes timeline.","- Outstanding balance matches sum of unpaid order balances
+- Prescription tab only visible with optical module"
+BOS-039,PDPA consent and data export/delete,Story,P1,2,Customers,P2 Optical MVP,P2 customers,BOS-037,Record marketing consent and consent date; owner can export or anonymise a customer (Malaysia PDPA).,"- Anonymise keeps financial records but strips PII
+- Consent flag respected by future marketing features"
+BOS-040,Product categories and attribute sets,Story,P0,5,Inventory,P2 Optical MVP,P2 inventory,BOS-031,"Categories (tree) each with an attribute set: Frame(brand, model, colour, size, gender, material), Lens(index, coating, type), Contact lens(BC, DIA, power). Stored as typed JSONB validated by schema.","- Owner can define attributes per category
+- Product form renders fields from the category's attribute set
+- Template seeds optical categories"
+BOS-041,Products and variants with SKU/barcode,Story,P0,5,Inventory,P2 Optical MVP,P2 inventory,"BOS-040, BOS-028","Product with variants (e.g. frame colour/size), SKU, barcode, cost price, selling price, tax class, track-stock flag, service/non-stock items (e.g. eye exam, fitting fee).","- Barcode scan in search finds the variant
+- Non-stock items never affect stock
+- Price history kept on change"
+BOS-042,Stock levels and stock movement ledger,Story,P0,5,Inventory,P2 Optical MVP,P2 inventory,"BOS-041, BOS-036","stock_movements append-only (type, qty, ref, cost, location); stock_levels derived/maintained per variant per location. Reservations tracked separately from on-hand.","- On-hand = sum of movements (reconciliation test)
+- Every change has a movement row with reason and reference"
+BOS-043,Manual stock receive and adjustment,Story,P0,3,Inventory,P2 Optical MVP,P2 inventory,BOS-042,"Receive stock (qty + unit cost) and adjust with reason codes (damaged, count correction, lost). Temporary substitute for purchasing in MVP.","- Adjustment requires reason
+- Receive updates average cost
+- Emits StockAdjusted event"
+BOS-044,Low-stock threshold and alerts,Story,P1,2,Inventory,P2 Optical MVP,P2 inventory,BOS-042,Reorder level per variant; dashboard widget + in-app notification when crossed.,"- Crossing threshold creates one notification, not one per sale"
+BOS-045,CSV import for products and customers,Story,P1,3,Inventory,P2 Optical MVP,P2 inventory,"BOS-041, BOS-037","Upload CSV, map columns, preview with validation errors, import in background.","- 1,000-row file imports with row-level error report
+- Re-import with same SKU updates rather than duplicates"
+BOS-046,Barcode label printing,Story,P2,2,Inventory,P2 Optical MVP,P2 inventory,BOS-041,Generate printable barcode labels (Code128/EAN) for selected variants.,- PDF sheet of labels for chosen products
+BOS-047,"Extensible order model: header, lines, totals",Story,P0,8,Sales / Orders,P2 Optical MVP,P2 sales-orders,"BOS-041, BOS-037, BOS-026, BOS-028","orders + order_lines with price, discount, tax per line; totals, deposit, paid, balance. Orders can be immediate (walk-in sale) or long-running (optical job). extension JSONB + 1:1 extension tables allowed for verticals.","- Totals computed server-side and re-verified on save
+- Walk-in sale and multi-stage order use the same model
+- Core order code contains no optical terms"
+BOS-048,Configurable order status workflow engine,Story,P0,8,Sales / Orders,P2 Optical MVP,P2 sales-orders,"BOS-047, BOS-033","Per-tenant workflow definition (states, allowed transitions, required permission, side-effects as event names). Optical default: Created → Deposit paid → Frame reserved → Lens ordered → Lens received → Assembly → QC → Ready → Notified → Picked up → Completed. Status history table.","- Illegal transitions rejected
+- Every transition recorded with user and timestamp
+- Template provides optical and simple-retail workflows"
+BOS-049,POS / new order screen,Story,P0,8,Sales / Orders,P2 Optical MVP,P2 sales-orders,"BOS-047, BOS-051","Fast keyboard + barcode driven screen: pick customer, add items, discounts, take full payment or deposit. Works on a tablet.","- Walk-in sale completed in under 30 seconds
+- Barcode scanner input adds item
+- Deposit order leaves correct balance"
+BOS-050,Order tracking board and list,Story,P0,5,Sales / Orders,P2 Optical MVP,P2 sales-orders,BOS-048,"Kanban by status + filterable list (status, due date, customer, staff). Overdue highlighting.","- Drag or button moves order to next allowed status
+- Overdue orders flagged by promised date"
+BOS-051,"Payments: cash, card, e-wallet/DuitNow QR (manual record)",Story,P0,5,Payments,P2 Optical MVP,P2 payments,BOS-047,"payments table (method, amount, reference, received_by); multiple partial payments per order; change calculation for cash with 5-sen rounding.","- Deposit + balance payments tracked separately
+- Balance can never go negative without explicit overpayment handling
+- Emits PaymentReceived"
+BOS-052,Receipts and invoices (print + PDF),Story,P0,5,Sales / Orders,P2 Optical MVP,P2 sales-orders,"BOS-051, BOS-035","80mm thermal receipt layout + A4 invoice PDF with business details, SST breakdown and balance due. Reprint anytime.","- Receipt prints from browser to thermal printer
+- PDF invoice emailable to customer"
+BOS-053,Line and order discounts with permission limits,Story,P1,3,Sales / Orders,P2 Optical MVP,P2 sales-orders,"BOS-047, BOS-022",Percent or fixed discounts; max discount per role; manager override flow.,"- Staff above limit needs manager PIN/approval
+- Discount reason recorded"
+BOS-054,Tax configuration (SST) and tax-inclusive/exclusive pricing,Story,P0,3,Sales / Orders,P2 Optical MVP,P2 sales-orders,"BOS-028, BOS-035","Tax classes per product, rate table per tenant, inclusive/exclusive toggle. Default Malaysian SST setup with option to disable for non-registered businesses.","- Tax computed per line and summed correctly
+- Non-SST-registered tenant shows no tax lines"
+BOS-055,Simple refunds and order cancellation,Story,P1,3,Sales / Orders,P2 Optical MVP,P2 sales-orders,"BOS-051, BOS-042",Cancel order (releases reservations) and refund payments (full/partial) with reason; returns items to stock optionally.,"- Refund requires sales.refund permission
+- Refund reverses ledger and stock via events"
+BOS-056,Stock reservation on order + deduction on completion,Story,P0,3,Sales / Orders,P2 Optical MVP,P2 sales-orders,"BOS-042, BOS-048, BOS-023",Reserving (e.g. frame reserved) holds stock; completion/pickup emits OrderCompleted and inventory deducts through an event handler.,"- Reserved stock not sellable to others
+- Handler is idempotent (replay safe)"
+BOS-057,Prescriptions (Rx) module,Story,P0,5,Optical extension,P2 Optical MVP,P2 optical-extension,"BOS-037, BOS-018","vertical-extensions/optical: prescriptions per customer with SPH/CYL/AXIS/ADD/PRISM/PD per eye, VA, examiner, date, expiry, notes. Validation of ranges and 0.25 steps.","- Rx history per customer, newest first
+- Invalid values rejected (e.g. axis outside 0–180)
+- Module disabled = zero optical UI or routes"
+BOS-058,Attach prescription to order + lens job details,Story,P0,3,Optical extension,P2 Optical MVP,P2 optical-extension,"BOS-057, BOS-047","order_prescriptions 1:1 extension table; lens job fields (lens type, index, coatings, fitting heights, frame measurements). Printed on job card.","- Order can link one Rx snapshot (copied, not referenced, so later edits don't change it)
+- Core sales module does not import optical code (lint rule)"
+BOS-059,Job card / lab order printout,Story,P1,2,Optical extension,P2 Optical MVP,P2 optical-extension,BOS-058,"Printable workshop sheet with Rx, frame, lens specs, due date and barcode of order number.",- Scanning job card barcode opens the order
+BOS-060,Eye examination record,Story,P2,3,Optical extension,P2 Optical MVP,P2 optical-extension,BOS-057,"Exam notes, visual acuity, IOP optional, chargeable exam service item that can be added to an order.","- Exam produces an Rx draft
+- Exam fee added to order in one click"
+BOS-061,Rx expiry / annual check-up reminders list,Story,P2,2,Optical extension,P2 Optical MVP,P2 optical-extension,BOS-057,"List of customers whose last exam is older than N months, for follow-up calls (automation comes in P9).","- Filter by months since last exam, exportable CSV"
+BOS-062,"Append-only ledger postings for sales, payments, expenses",Story,P0,5,Accounting (basic),P2 Optical MVP,P2 accounting-basic,"BOS-023, BOS-051","Minimal chart of accounts (Cash, Bank, AR, Revenue, SST payable, Inventory, COGS, Expenses) and journal_entries/lines written by event handlers. Must balance (debits = credits).","- Every sale, payment, refund and expense produces a balanced entry
+- Entries are immutable; corrections are reversals
+- DB constraint or check prevents unbalanced entries"
+BOS-063,Expense entries with categories and receipt upload,Story,P0,3,Expenses,P2 Optical MVP,P2 expenses,"BOS-027, BOS-062","Category, amount, date, payment method, vendor text, note, receipt photo. Default categories from template (rent, utilities, salaries...).","- Expense posts to ledger via event
+- Receipt image viewable from list"
+BOS-064,"Cash drawer sessions (open/close shift, cash count)",Story,P1,3,Payments,P2 Optical MVP,P2 payments,BOS-051,"Open with float, record pay-ins/outs, close with counted cash; variance report.","- Close shows expected vs counted and variance
+- Payments linked to the open session"
+BOS-065,Daily sales / takings report,Story,P0,2,Reports (basic),P2 Optical MVP,P2 reports-basic,BOS-051,"By day and payment method, with totals, discounts, refunds, tax; date range filter respecting tenant timezone.","- Matches sum of payments for the day
+- Exports CSV"
+BOS-066,Current stock and low-stock report,Story,P0,2,Reports (basic),P2 Optical MVP,P2 reports-basic,BOS-042,"On-hand, reserved, available, cost value per variant and category.",- Stock value = qty × average cost
+BOS-067,Outstanding balances report,Story,P0,2,Reports (basic),P2 Optical MVP,P2 reports-basic,BOS-051,"Orders with unpaid balance, age in days, customer contact.",- Sum equals total AR in ledger
+BOS-068,Simple income vs expense summary,Story,P1,2,Reports (basic),P2 Optical MVP,P2 reports-basic,"BOS-062, BOS-063","Month view: revenue, COGS, expenses, gross and net profit from the ledger.","- Numbers derive only from ledger, not from orders table"
+BOS-069,Tenant dashboard,Story,P1,3,Reports (basic),P2 Optical MVP,P2 reports-basic,"BOS-065, BOS-050","Today's sales, orders due today, ready-for-pickup count, low stock, outstanding balance; widgets appear only for enabled modules.",- Widgets respect module + permission
+BOS-070,In-app notifications + email on order ready,Story,P1,3,Notifications,P2 Optical MVP,P2 notifications,"BOS-023, BOS-048",Notification center for staff; customer email when order reaches Ready. Template per event with tenant branding.,"- Order → Ready sends one email to customer (if email present)
+- Staff sees bell notifications for low stock and overdue orders"
+BOS-071,"""Send via WhatsApp"" click-to-chat link",Story,P1,1,Notifications,P2 Optical MVP,P2 notifications,BOS-048,Button generating a wa.me link with prefilled 'Your glasses are ready' message. Zero-integration stopgap before WhatsApp API.,- Message template editable in settings
+BOS-072,Fixed Owner / Manager / Staff role maps,Story,P0,2,Permissions,P2 Optical MVP,P2 permissions,BOS-021,Hardcoded permission sets per role for MVP; user management page to invite and assign roles.,"- Staff cannot see cost price, reports or settings
+- Owner can deactivate a user"
+BOS-073,"List tenants, view status/plan, toggle modules",Story,P0,3,Platform admin (minimal),P2 Optical MVP,P2 platform-admin-minimal,"BOS-032, BOS-018","Tenant list with status (trial/active/suspended), user count, created date; detail page to toggle modules and suspend. Reads tenant metadata only, not business data.","- Toggling a module is reflected in tenant app within seconds
+- Suspended tenant cannot log in and sees a notice"
+BOS-074,Create tenant from admin with template,Story,P1,2,Platform admin (minimal),P2 Optical MVP,P2 platform-admin-minimal,"BOS-073, BOS-034",Admin-side onboarding form calling the provisioning service; sends owner invite.,- Tenant created and owner invited without SQL
+BOS-075,First-run setup wizard for new tenants,Story,P1,3,Onboarding,P2 Optical MVP,P2 onboarding,"BOS-034, BOS-035, BOS-045",Business details → tax → first staff → import products/customers → done checklist.,- New owner reaches first sale without help docs
+BOS-076,Demo data seeder for Optical,Task,P2,2,Onboarding,P2 Optical MVP,P2 onboarding,"BOS-047, BOS-057","Script generating realistic customers, frames, lenses, orders across statuses for demos and testing.",- `pnpm seed:demo` produces a believable shop
+BOS-077,Production hosting and environments,Task,P0,5,Infrastructure,P3 Pilot launch,P3 infrastructure,BOS-005,"Pick hosting (e.g. Fly.io/Render/Railway or AWS ap-southeast-1/5 for Malaysian latency), managed Postgres + Redis, staging and production, IaC where practical.","- Staging auto-deploys from main
+- Production deploy is one approved action
+- Region close to Malaysia"
+BOS-078,Zero-downtime migration strategy,Task,P1,2,Infrastructure,P3 Pilot launch,P3 infrastructure,BOS-077,"Expand/contract migrations, migration step in deploy pipeline, rollback plan.",- Deploy with a schema change causes no downtime in staging test
+BOS-079,"Backups, point-in-time recovery and restore drill",Task,P0,2,Infrastructure,P3 Pilot launch,P3 infrastructure,BOS-077,Automated daily backups + PITR; documented and tested restore; per-tenant export script.,"- Restore drill completed and timed
+- Single-tenant export produces full data dump"
+BOS-080,"Logging, error tracking, metrics, uptime",Task,P0,3,Infrastructure,P3 Pilot launch,P3 infrastructure,BOS-077,"Structured logs with tenant_id/request_id, Sentry for api + web, basic metrics dashboard, uptime check and alerting.","- An exception in production reaches Sentry with tenant context
+- Alert fires on 5xx spike"
+BOS-081,Security hardening pass,Task,P0,3,Security,P3 Pilot launch,P3 security,BOS-077,"Helmet/CSP, CORS, rate limiting on auth, dependency scanning, secret scanning, OWASP ASVS checklist, RLS review.","- Checklist completed and filed
+- No high-severity dependency alerts open"
+BOS-082,Per-tenant and per-IP rate limiting,Story,P1,2,Security,P3 Pilot launch,P3 security,BOS-003,@nestjs/throttler with Redis store; stricter limits on auth endpoints.,"- Brute force on login is throttled
+- One noisy tenant can't exhaust shared limits"
+BOS-083,"Terms of service, privacy policy, PDPA notice",Task,P0,2,Business,P3 Pilot launch,P3 business,,Customer-facing legal docs; data processing terms since tenants store their customers' data.,- Docs linked from signup and app footer
+BOS-084,Performance baseline + indexes,Task,P1,3,Infrastructure,P3 Pilot launch,P3 infrastructure,"BOS-047, BOS-042",Load test POS and order list with 50 tenants × realistic data; add indexes (tenant_id first) and fix N+1s.,- p95 < 300ms for POS endpoints at target load
+BOS-085,PWA install + responsive tablet layout,Story,P1,3,Tenant web app,P3 Pilot launch,P3 tenant-web-app,BOS-049,"Installable PWA, tablet-first POS layout, graceful offline message (true offline mode is P10).","- Installs on iPad/Android tablet
+- POS usable at 768px width"
+BOS-086,Help center and in-app guides,Task,P2,2,Onboarding,P3 Pilot launch,P3 onboarding,BOS-075,Short docs/videos for top 10 tasks; link from each screen.,- Top 10 tasks documented
+BOS-087,Onboard pilot optical shop,Task,P0,5,Business,P3 Pilot launch,P3 business,"BOS-079, BOS-080, BOS-075","Migrate the pilot shop's products and customers, train staff, run in parallel with existing process for two weeks, collect feedback into backlog.","- Shop runs a full week of real orders in BOS
+- Feedback captured as tickets"
+BOS-088,In-app feedback + product analytics,Task,P2,2,Business,P3 Pilot launch,P3 business,BOS-031,"Feedback widget and privacy-respecting usage analytics (PostHog etc.) keyed by tenant, not customer data.",- Feedback lands in an inbox the team reads
+BOS-089,Extract optical assumptions out of core modules,Task,P0,5,Generalization,P4 Generalize + 2nd vertical,P4 generalization,BOS-087,Audit Sales/Inventory/Customers for optical-specific fields or logic and move them into vertical-extensions/optical.,"- Dependency-cruiser rule: core never imports vertical-extensions — enforced in CI
+- Optical still works end to end"
+BOS-090,"Vertical extension SDK: hooks, slots and extension tables",Story,P0,5,Generalization,P4 Generalize + 2nd vertical,P4 generalization,BOS-089,"Documented way for a vertical to add: 1:1 extension tables, event handlers, workflow side-effects, UI slots (e.g. order detail panel, customer tab), settings pages.","- Optical re-implemented purely through the SDK
+- Guide for adding a new vertical"
+BOS-091,Template definitions as versioned config,Story,P2,3,Generalization,P4 Generalize + 2nd vertical,P4 generalization,BOS-033,Templates move to versioned JSON/YAML with validation; later edited in platform admin.,- Adding a template needs no code change
+BOS-092,General Retail + Clothing templates,Story,P1,2,Generalization,P4 Generalize + 2nd vertical,P4 generalization,BOS-090,Clothing: size/colour variants matrix; General Retail: plain POS workflow.,- New tenant of each type works without optical UI
+BOS-093,Tables and floor plan,Story,P1,5,Restaurant extension,P4 Generalize + 2nd vertical,P4 restaurant-extension,BOS-090,"Areas, tables, seats; open tab per table; move/merge tables.","- Order can be opened against a table
+- Floor plan shows occupied/free"
+BOS-094,Menu items with modifiers,Story,P1,5,Restaurant extension,P4 Generalize + 2nd vertical,P4 restaurant-extension,"BOS-090, BOS-041","Modifier groups (size, add-ons, spice level) with price deltas; required/optional rules.",- Modifiers appear on kitchen ticket and receipt
+BOS-095,Kitchen orders / kitchen display,Story,P1,5,Restaurant extension,P4 Generalize + 2nd vertical,P4 restaurant-extension,BOS-094,Send order to kitchen by station; KDS screen with bump; kitchen ticket printing.,"- Order lines route to the right station
+- Bumped items update order status"
+BOS-096,Recipes and ingredient deduction,Story,P2,5,Restaurant extension,P4 Generalize + 2nd vertical,P4 restaurant-extension,"BOS-094, BOS-042",Recipe (BOM) per menu item; OrderCompleted deducts ingredients instead of the item.,- Selling 1 nasi lemak deducts its ingredients
+BOS-097,Split bill and service charge,Story,P2,3,Restaurant extension,P4 Generalize + 2nd vertical,P4 restaurant-extension,BOS-093,Split by item or evenly; configurable service charge.,- Split bills reconcile to the original total
+BOS-098,Appointments calendar for services,Story,P2,8,Salon extension (alt),P4 Generalize + 2nd vertical,P4 salon-extension-alt,BOS-090,"If Salon chosen as 2nd vertical instead: staff calendars, services with duration, booking → order conversion.",- Booking can be converted to a sale with the booked services
+BOS-099,"Supplier profiles, contacts and supplied products",Story,P0,3,Suppliers,P5 Supply chain,P5 suppliers,BOS-041,"Supplier master, multiple contacts, payment terms, supplier SKU and price per product.",- Product shows its suppliers and last cost
+BOS-100,Purchase requests,Story,P2,3,Purchasing,P5 Supply chain,P5 purchasing,BOS-099,Staff raise requests; manager approves into a PO. Also generated from low-stock.,- Approved request converts to PO
+BOS-101,Purchase orders,Story,P0,5,Purchasing,P5 Supply chain,P5 purchasing,"BOS-099, BOS-026","Create/send PO (PDF/email), statuses draft/sent/partially received/received/closed.","- PO PDF emailed to supplier
+- Status reflects receipts"
+BOS-102,Goods received notes (partial receipts),Story,P0,5,Purchasing,P5 Supply chain,P5 purchasing,"BOS-101, BOS-042","Receive against PO lines, partial quantities, updates stock and cost via GoodsReceived event.","- Partial receipt leaves remaining qty open
+- Stock + average cost updated"
+BOS-103,Supplier invoices and payments (AP),Story,P1,5,Purchasing,P5 Supply chain,P5 purchasing,"BOS-102, BOS-062","Record supplier bill, 3-way match (PO/GRN/bill), pay fully or partially; posts to AP.","- Mismatch flagged
+- Supplier balance correct"
+BOS-104,Auto-create lens order to lab from job,Story,P1,3,Optical extension,P5 Supply chain,P5 optical-extension,"BOS-101, BOS-058","""Lens ordered"" status can generate a PO to the lens lab with Rx details; receipt moves order to ""Lens received"".",- Receiving the lens PO advances the linked order
+BOS-105,Multi-location stock,Story,P1,5,Inventory advanced,P5 Supply chain,P5 inventory-advanced,BOS-042,Enable multiple branches/warehouses; stock per location; POS sells from its location.,- Each branch sees its own availability plus others read-only
+BOS-106,Stock transfers between locations,Story,P1,3,Inventory advanced,P5 Supply chain,P5 inventory-advanced,BOS-105,"Transfer out → in transit → received, with discrepancies.",- In-transit stock not sellable at either end
+BOS-107,Stock take / cycle counts,Story,P1,3,Inventory advanced,P5 Supply chain,P5 inventory-advanced,BOS-042,"Freeze snapshot, count via scanner, review variances, post adjustments.",- Variance report before posting
+BOS-108,"Batch/lot, expiry and serial numbers",Story,P2,5,Inventory advanced,P5 Supply chain,P5 inventory-advanced,BOS-042,Track contact lens batches with expiry; serials for electronics; FEFO suggestions.,"- Expiring batch report
+- Serial captured at sale"
+BOS-109,"Inventory valuation methods (weighted average, FIFO)",Story,P2,5,Inventory advanced,P5 Supply chain,P5 inventory-advanced,"BOS-042, BOS-062",Per-tenant costing method; COGS posted from cost layers.,- Valuation report ties to Inventory account in ledger
+BOS-110,Reorder suggestions,Story,P2,3,Inventory advanced,P5 Supply chain,P5 inventory-advanced,"BOS-101, BOS-044",Suggest PO quantities from sales velocity and reorder levels.,- Suggested PO can be created in one click
+BOS-111,Configurable chart of accounts,Story,P0,3,Accounting,P6 Accounting & finance,P6 accounting,BOS-062,Default Malaysian SME chart; tenants can add accounts; mapping of event postings to accounts configurable.,- Posting rules editable without code
+BOS-112,Manual journal entries and period locking,Story,P1,3,Accounting,P6 Accounting & finance,P6 accounting,BOS-111,Accountant can post adjusting journals; lock closed periods.,- Posting into locked period rejected
+BOS-113,Profit & Loss and Balance Sheet,Story,P0,5,Accounting,P6 Accounting & finance,P6 accounting,BOS-111,Statements for any period with comparison; drill down to entries.,"- Balance sheet balances
+- Drill-down from line to journal"
+BOS-114,Cash flow statement,Story,P2,3,Accounting,P6 Accounting & finance,P6 accounting,BOS-113,Direct method from cash/bank accounts.,- Closing cash equals cash account balance
+BOS-115,AR and AP aging + customer statements,Story,P1,3,Accounting,P6 Accounting & finance,P6 accounting,"BOS-103, BOS-051",0–30/31–60/61–90/90+ aging; printable customer statements.,- Aging totals equal AR/AP balances
+BOS-116,Bank accounts and reconciliation,Story,P2,5,Accounting,P6 Accounting & finance,P6 accounting,BOS-111,"Import bank CSV, match to payments/expenses, reconcile.",- Unmatched lines listed; reconciled balance matches statement
+BOS-117,SST report (SST-02 figures),Story,P1,3,Accounting,P6 Accounting & finance,P6 accounting,"BOS-054, BOS-062","Taxable sales, tax collected per period in the shape needed for the SST return.",- Figures reconcile to SST payable account
+BOS-118,Spike: LHDN MyInvois e-Invoice requirements,Spike,P1,2,E-Invoice (Malaysia),P6 Accounting & finance,P6 e-invoice-malaysia,BOS-052,"Confirm current mandate phases and exemption thresholds for SMEs, consolidated e-invoice rules for B2C, API vs portal options and sandbox access.","- Written summary of what tenants must do and when
+- Decision on build vs third-party middleware"
+BOS-119,MyInvois e-Invoice submission,Story,P1,8,E-Invoice (Malaysia),P6 Accounting & finance,P6 e-invoice-malaysia,BOS-118,"Submit invoices/credit notes via MyInvois API, store UUID + validation QR, monthly consolidated e-invoice for B2C receipts, buyer TIN capture.","- Invoice validated in sandbox with QR on PDF
+- Consolidated monthly submission job"
+BOS-120,Export to external accounting (CSV / SQL Account / Xero),Story,P2,3,Accounting,P6 Accounting & finance,P6 accounting,BOS-111,Many SMEs keep an accountant: export journals in common formats.,- Export imports cleanly into target tool
+BOS-121,Recurring expenses and approval workflow,Story,P2,3,Expenses,P6 Accounting & finance,P6 expenses,"BOS-063, BOS-022",Monthly rent etc. auto-created; expenses above threshold need approval.,"- Recurring schedule creates entries on time
+- Unapproved expenses not posted"
+BOS-122,Employee expense claims,Story,P3,3,Expenses,P6 Accounting & finance,P6 expenses,BOS-121,Staff submit claims with receipts; approve and reimburse.,- Reimbursement posts to ledger
+BOS-123,Custom roles and permission matrix UI,Story,P0,5,Permissions,P7 People & permissions,P7 permissions,BOS-022,"Owner creates roles and ticks permissions per module (View/Create/Edit/Delete/Refund/Adjust...), grouped by enabled modules.","- Custom role takes effect immediately
+- Cannot remove own last owner permission"
+BOS-124,"Field-level visibility (cost price, margins)",Story,P2,3,Permissions,P7 People & permissions,P7 permissions,BOS-123,Hide sensitive fields by permission across API responses and UI.,- Cost price absent from API payload for roles without it
+BOS-125,Location-scoped access,Story,P2,3,Permissions,P7 People & permissions,P7 permissions,"BOS-123, BOS-105",Restrict users to specific branches.,- User sees only assigned branches' orders and stock
+BOS-126,Employee records separate from users,Story,P1,3,Employees,P7 People & permissions,P7 employees,BOS-014,"Employee profile (position, IC, start date, salary info optional), optionally linked to a user login.",- Employee without login can be assigned to sales
+BOS-127,Clock in/out and shift schedule,Story,P2,5,Employees,P7 People & permissions,P7 employees,BOS-126,"PIN-based clock in at POS, weekly roster, timesheet export.",- Timesheet shows hours per employee per week
+BOS-128,Sales by employee and commissions,Story,P2,3,Employees,P7 People & permissions,P7 employees,"BOS-126, BOS-047",Attribute sales to staff; commission rules by category.,- Commission report per period
+BOS-129,Quick user switching on shared POS (PIN),Story,P1,2,Employees,P7 People & permissions,P7 employees,BOS-072,Shared tablet stays logged in to the tenant; staff switch with a PIN so actions are attributed.,- Every order records the acting staff member
+BOS-130,"Plans, module pricing and feature limits",Story,P0,3,Subscriptions,P8 Platform business,P8 subscriptions,BOS-073,"Plans (e.g. Starter/Professional) with included modules, add-on module prices, limits (users, locations).",- Limits enforced (e.g. 4th user blocked on 3-user plan)
+BOS-131,Subscription billing with payment gateway,Story,P0,8,Subscriptions,P8 Platform business,P8 subscriptions,BOS-130,"Recurring billing via a gateway supporting Malaysian cards/FPX (e.g. Stripe, Billplz, or similar); trials, upgrades, proration, dunning, invoices to tenants.","- Trial converts to paid
+- Failed payment → grace period → suspension
+- Tenant can download their platform invoices"
+BOS-132,Trial lifecycle and self-serve plan management,Story,P1,3,Subscriptions,P8 Platform business,P8 subscriptions,BOS-131,"Trial countdown banners, upgrade from inside tenant app, cancel flow with data export.",- Cancelled tenant keeps read-only access for N days
+BOS-133,Audited impersonation / support access,Story,P0,5,Support,P8 Platform business,P8 support,"BOS-073, BOS-025",Tenant owner grants time-boxed support access; admin gets short-lived session (Redis TTL) with banner; every action logged as 'support on behalf of'.,"- No access without active grant
+- All actions attributable in tenant audit log
+- Session auto-expires"
+BOS-134,Platform audit log,Story,P1,2,Support,P8 Platform business,P8 support,BOS-032,"Log every platform-admin action (module toggles, suspensions, impersonations).","- Audit searchable by admin, tenant, action"
+BOS-135,"Platform admin roles (support, billing, super-admin)",Story,P1,2,Platform admin,P8 Platform business,P8 platform-admin,BOS-032,Least-privilege roles for your own team.,- Support role cannot change billing
+BOS-136,Feature flags and staged rollouts,Story,P2,3,Platform admin,P8 Platform business,P8 platform-admin,BOS-018,Per-tenant/percentage flags for beta features separate from module entitlements.,- Feature enabled for one tenant only
+BOS-137,Platform analytics dashboard,Story,P2,3,Platform admin,P8 Platform business,P8 platform-admin,BOS-131,"MRR, churn, active tenants, module adoption, tenants by business type.",- MRR matches billing provider
+BOS-138,Support tickets / in-app chat integration,Story,P3,3,Support,P8 Platform business,P8 support,BOS-133,"Integrate a helpdesk (e.g. Crisp, Intercom, Freshdesk) with tenant context.",- Support agent sees tenant plan and modules next to ticket
+BOS-139,Tenant subdomains and branding,Story,P3,3,Platform admin,P8 Platform business,P8 platform-admin,BOS-012,shopname.yourapp.com resolves tenant; logo and colour on tenant app and customer emails.,- Subdomain login lands in the right tenant
+BOS-140,BullMQ queues for event handlers,Story,P0,5,Async infrastructure,P9 Reporting & integrations,P9 async-infrastructure,BOS-024,"Move async handlers (notifications, ledger posting, report refresh) to BullMQ with retries, backoff, dead-letter queue and a dashboard (Bull Board).","- Failed job retried then parked in DLQ
+- Tenant context restored inside workers"
+BOS-141,Generic report definition engine,Story,P0,8,Reporting,P9 Reporting & integrations,P9 reporting,"BOS-065, BOS-066","ReportDefinition (key, query, filters, required module/permission, columns) + /reports/:key/run; migrate existing hardcoded reports.","- New report added with a definition file only
+- Module/permission enforced per report"
+BOS-142,Materialized views + scheduled refresh,Story,P1,3,Reporting,P9 Reporting & integrations,P9 reporting,"BOS-141, BOS-140","Heavy aggregates (sales by day/product, valuation) refreshed by jobs; report result cache in Redis.",- P&L for a year loads under 1s
+BOS-143,"Report pack: sales by product/staff/category, customers, suppliers",Story,P1,5,Reporting,P9 Reporting & integrations,P9 reporting,BOS-141,"Sales by employee/product/category, new vs repeat customers, supplier spending, expense by category.",- Each report exports CSV/XLSX/PDF
+BOS-144,Scheduled email reports,Story,P2,2,Reporting,P9 Reporting & integrations,P9 reporting,"BOS-143, BOS-140",Owner subscribes to daily/weekly summary email.,- Email arrives at tenant-local time
+BOS-145,"Notification engine: templates, channels, preferences",Story,P0,5,Notifications,P9 Reporting & integrations,P9 notifications,BOS-140,"Event → rule → template → channel (email, SMS, WhatsApp, in-app); per-tenant templates, customer opt-out, delivery log.","- Delivery status visible per message
+- Opted-out customer never messaged"
+BOS-146,WhatsApp Business API integration,Story,P0,5,Notifications,P9 Reporting & integrations,P9 notifications,BOS-145,"Via Meta Cloud API or a BSP; approved templates for 'order ready', 'balance reminder', 'check-up due'. Per-tenant sender number option.","- 'Ready for pickup' sent automatically on status change
+- Template approval flow documented"
+BOS-147,SMS and transactional email providers,Story,P1,3,Notifications,P9 Reporting & integrations,P9 notifications,BOS-145,SMS gateway with Malaysian coverage + transactional email (SES/Postmark/Resend).,- Fallback to SMS when WhatsApp fails
+BOS-148,Automated check-up and collection reminders,Story,P1,2,Optical extension,P9 Reporting & integrations,P9 optical-extension,"BOS-146, BOS-061",Scheduled reminders for annual eye check and uncollected ready orders after N days.,- Reminder sent once per cycle
+BOS-149,Integrated payments: DuitNow QR / FPX / card terminal,Story,P1,8,Payments,P9 Reporting & integrations,P9 payments,BOS-051,Integrate a Malaysian payment provider for dynamic QR at POS and payment links for balances; webhook reconciliation.,"- Payment link paid → order balance updated automatically
+- Webhook handling idempotent"
+BOS-150,Payment links for outstanding balances,Story,P2,2,Payments,P9 Reporting & integrations,P9 payments,"BOS-149, BOS-146",Send balance payment link with the 'ready' message.,- Customer can pay balance before pickup
+BOS-151,Public API + webhooks for tenants,Story,P3,5,Integrations,P9 Reporting & integrations,P9 integrations,"BOS-029, BOS-140",API keys per tenant with scopes; outgoing webhooks for key events.,"- Webhook signatures verifiable
+- Keys revocable"
+BOS-152,"Appointments module (core, reusable)",Story,P1,8,Appointments,P10 Optional modules,P10 appointments,BOS-090,"Resources (staff/rooms), services with duration, calendar, reminders; used by optical (eye tests) and salons.","- Double-booking prevented
+- Reminder sent 24h before"
+BOS-153,Public online booking page,Story,P2,5,Appointments,P10 Optional modules,P10 appointments,BOS-152,Customer-facing booking link per tenant.,- Booking appears in calendar and notifies staff
+BOS-154,Loyalty points and rewards,Story,P2,5,Loyalty,P10 Optional modules,P10 loyalty,"BOS-051, BOS-037","Earn per RM spent, redeem as discount, tiers; points ledger.",- Points reverse on refund
+BOS-155,"Customer tags, groups and customer-specific pricing",Story,P2,3,Customers,P10 Optional modules,P10 customers,"BOS-037, BOS-041",Tags and groups; price lists per group (e.g. corporate/wholesale).,- Group price applied automatically at POS
+BOS-156,Campaigns to customer segments,Story,P3,5,Marketing,P10 Optional modules,P10 marketing,"BOS-155, BOS-146, BOS-039",Segment by tags/purchase history; send consented WhatsApp/SMS/email campaigns.,- Only consented customers included
+BOS-157,Quotations → order conversion,Story,P2,3,Sales / Orders,P10 Optional modules,P10 sales-orders,BOS-047,Quote with validity date; convert to order.,- Converted order keeps quote reference
+BOS-158,Online storefront with inventory sync,Story,P3,13,Online store,P10 Optional modules,P10 online-store,"BOS-041, BOS-149",Simple storefront per tenant or Shopee/Lazada/Shopify sync (spike first).,- Online order reserves stock and appears in order board
+BOS-159,Delivery / pickup scheduling,Story,P3,5,Delivery,P10 Optional modules,P10 delivery,BOS-047,"Delivery address, slot, driver assignment, status.",- Customer notified when out for delivery
+BOS-160,Offline-capable POS,Story,P2,13,POS,P10 Optional modules,P10 pos,"BOS-085, BOS-030","Local queue (IndexedDB) for sales when offline, sync with conflict rules on reconnect.",- Sales made offline sync without duplicates
+BOS-161,"Hardware: receipt printer, cash drawer, barcode scanner, customer display",Story,P2,5,POS,P10 Optional modules,P10 pos,BOS-052,"ESC/POS printing via local bridge or WebUSB, drawer kick, second-screen display.",- Cash sale opens drawer and prints without browser dialog
+BOS-162,Owner mobile app (dashboard + approvals),Story,P3,8,Mobile,P10 Optional modules,P10 mobile,BOS-069,"React Native/Expo app for owners: sales today, approvals, notifications.",- Push notification on large refund or low stock
+BOS-163,"Internationalization (BM, English, Chinese) and multi-currency",Story,P2,5,Platform,P10 Optional modules,P10 platform,BOS-031,"i18n framework, Bahasa Malaysia + Chinese translations, currency per tenant beyond MYR.","- User can switch language
+- Receipts print in tenant language"
+BOS-164,Light manufacturing / assembly,Story,P3,8,Manufacturing,P10 Optional modules,P10 manufacturing,BOS-096,Generalise recipes into BOMs and production orders.,- Production order consumes components and produces finished goods
+BOS-165,Repairs / service jobs,Story,P3,8,Service management,P10 Optional modules,P10 service-management,BOS-048,"Job tickets for repairs (phones, watches, frames) reusing the workflow engine.","- Repair job has intake, diagnosis, quote, repair, pickup states"
+BOS-166,Split Notifications/Reporting into services (only if load demands),Spike,P3,5,Scale-out,P10 Optional modules,P10 scale-out,"BOS-140, BOS-141",Evaluate extracting hot modules behind the event contracts; Kafka only if cross-service volume justifies it.,- Decision record with load data

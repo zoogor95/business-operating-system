@@ -1,0 +1,21 @@
+{
+  "name": "business-operating-system",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "start": "turbo run start",
+    "typecheck": "turbo run typecheck",
+    "dev:api": "turbo run dev --filter=@bos/api...",
+    "dev:tenant": "turbo run dev --filter=@bos/tenant-web...",
+    "dev:admin": "turbo run dev --filter=@bos/admin-web..."
+  },
+  "devDependencies": {
+    "turbo": "^2.3.0",
+    "typescript": "^5.7.0"
+  }
+}
