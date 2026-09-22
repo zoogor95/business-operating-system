@@ -9,19 +9,40 @@ export function App() {
 
   useEffect(() => {
     fetch(`/${API_PREFIX}/health`)
-      .then((r) => (r.ok ? (r.json() as Promise<HealthResponse>) : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((r) =>
+        r.ok
+          ? (r.json() as Promise<HealthResponse>)
+          : Promise.reject(new Error(`HTTP ${r.status}`)),
+      )
       .then(setHealth)
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+      .catch((e: unknown) => {
+        setError(e instanceof Error ? e.message : String(e));
+      });
   }, []);
 
   return (
-    <main style={{ fontFamily: 'system-ui, sans-serif', maxWidth: 640, margin: '48px auto', padding: '0 16px' }}>
+    <main
+      style={{
+        fontFamily: 'system-ui, sans-serif',
+        maxWidth: 640,
+        margin: '48px auto',
+        padding: '0 16px',
+      }}
+    >
       <h1 style={{ color: '#0f766e' }}>BOS — Tenant App</h1>
       <p>The app shop owners and staff use.</p>
 
       <h2>API</h2>
-      {health && <p>✅ {health.service} is up — {health.knownModules.length} modules known</p>}
-      {error && <p>⚠️ API unreachable ({error}). Is <code>@bos/api</code> running?</p>}
+      {health && (
+        <p>
+          ✅ {health.service} is up — {health.knownModules.length} modules known
+        </p>
+      )}
+      {error && (
+        <p>
+          ⚠️ API unreachable ({error}). Is <code>@bos/api</code> running?
+        </p>
+      )}
       {!health && !error && <p>Checking…</p>}
 
       <h2>Core modules (from @bos/shared)</h2>

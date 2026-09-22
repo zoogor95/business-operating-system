@@ -32,7 +32,7 @@ export type OrderCompletedV1 = DomainEvent<
     /** Integer minor units (sen). */
     totalMinor: number;
     currency: string;
-    lines: Array<{ variantId: string | null; quantity: number }>;
+    lines: { variantId: string | null; quantity: number }[];
   }
 >;
 
