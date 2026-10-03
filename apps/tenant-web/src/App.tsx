@@ -34,9 +34,21 @@ export function App() {
 
       <h2>API</h2>
       {health && (
-        <p>
-          ✅ {health.service} is up — {health.knownModules.length} modules known
-        </p>
+        <>
+          <p>
+            {health.status === 'ok' ? '✅' : '⚠️'} {health.service} is up —{' '}
+            {health.knownModules.length} modules known
+          </p>
+          <ul>
+            {Object.entries(health.dependencies).map(([name, dep]) => (
+              <li key={name}>
+                {dep.status === 'up'
+                  ? `✅ ${name} (${dep.latencyMs} ms)`
+                  : `❌ ${name}: ${dep.error}`}
+              </li>
+            ))}
+          </ul>
+        </>
       )}
       {error && (
         <p>
