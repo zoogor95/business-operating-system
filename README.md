@@ -37,7 +37,7 @@ Rules of thumb:
 
 ## Prerequisites
 
-- Node.js 22+ (`.nvmrc`)
+- Node.js 22.12+ (`.nvmrc`)
 - pnpm 10 — easiest via Corepack: `corepack enable` (the version is pinned in `package.json`)
 - Docker Desktop (or any Docker Engine with Compose v2) for the local stack
 
@@ -62,6 +62,26 @@ directly on your machine. Data lives in named volumes (`bos_postgres-data`, `bos
 `GET /api/health` pings all three and reports each as `up` (with latency) or `down` (with the
 error); overall `status` is `degraded` if any is down. Both web apps show this on their start page.
 
+## Database and migrations
+
+The API uses [Kysely](https://kysely.dev) for queries and its migrator for schema changes —
+see [ADR-0001](docs/adr/0001-kysely-for-queries-and-migrations.md) for why.
+
+```bash
+pnpm db:migrate    # apply all pending migrations
+pnpm db:rollback   # undo the most recent one
+pnpm db:status     # list applied / pending
+```
+
+- Migrations live in `apps/api/src/db/migrations/NNNN_name.ts` as `up`/`down` functions
+  (mostly raw SQL via Kysely's `sql` template). Add the next number and register it in
+  `migrations/index.ts`. Add the new tables' row types to `Database` in `src/db/database.ts`.
+- They don't run on API boot. From a build: `node apps/api/dist/db/migrate.js latest`.
+- Inject `DatabaseService` and use `db` for queries, `transaction(fn)` for a transaction, and
+  `withTenant(tenantId, fn)` for anything tenant-scoped: it sets `app.current_tenant` for that
+  transaction only (`SET LOCAL` semantics), which RLS policies read via `current_tenant_id()`.
+  Run every query of the unit of work on the `trx` passed to `fn`.
+
 ## Scripts (run from the repo root)
 
 | Command                                     | What it does                                                             |
@@ -76,6 +96,8 @@ error); overall `status` is `degraded` if any is down. Both web apps show this o
 | `pnpm dev:api` / `dev:tenant` / `dev:admin` | Run one app (plus the packages it depends on)                            |
 | `pnpm infra:up` / `infra:down`              | Start (and wait for healthy) / stop the Docker stack                     |
 | `pnpm infra:reset` / `infra:logs`           | Stop the stack and delete its data volumes / follow container logs       |
+| `pnpm db:migrate` / `db:rollback`           | Apply pending migrations / undo the latest one                           |
+| `pnpm db:status`                            | List applied and pending migrations                                      |
 
 Run a script in one package directly with a filter, e.g. `pnpm --filter @bos/api build`.
 
@@ -98,7 +120,7 @@ Run a script in one package directly with a filter, e.g. `pnpm --filter @bos/api
 
 ## Smoke test
 
-After `pnpm infra:up` and `pnpm dev`, open http://localhost:5173 and http://localhost:5174. Each page calls
+After `pnpm infra:up`, `pnpm db:migrate` and `pnpm dev`, open http://localhost:5173 and http://localhost:5174. Each page calls
 `GET /api/health` through the Vite dev proxy and lists the core modules imported from
 `@bos/shared` — if you see "✅ bos-api is up", all three apps and the shared package are wired
 correctly. You can also hit http://localhost:3000/api/health directly.
@@ -112,5 +134,5 @@ correctly. You can also hit http://localhost:3000/api/health directly.
 
 ## What's next
 
-Tracked in `docs/bos-backlog.csv`: ORM + migrations (BOS-004), CI (BOS-005), typed config
-(BOS-007).
+Tracked in `docs/bos-backlog.csv`: CI (BOS-005), test harness (BOS-006), typed config
+(BOS-007), tenants table (BOS-010).
