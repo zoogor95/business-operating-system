@@ -1,29 +1,45 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
-import { Pool } from 'pg';
+import { sql, type Transaction } from 'kysely';
+import { createDb, type Database } from '../db/database';
 import { requireEnv } from '../env';
 
-// Raw connection pool for now; the ORM/migration layer on top of it is BOS-004.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 @Injectable()
 export class DatabaseService implements OnModuleDestroy {
   private readonly logger = new Logger(DatabaseService.name);
 
-  readonly pool = new Pool({
-    connectionString: requireEnv('DATABASE_URL'),
-    connectionTimeoutMillis: 3000,
+  // An idle client losing its connection must not crash the process.
+  readonly db = createDb(requireEnv('DATABASE_URL'), (err) => {
+    this.logger.error(`Idle Postgres client error: ${err.message}`);
   });
 
-  constructor() {
-    // An idle client losing its connection must not crash the process.
-    this.pool.on('error', (err) => {
-      this.logger.error(`Idle Postgres client error: ${err.message}`);
+  async ping(): Promise<void> {
+    await sql`select 1`.execute(this.db);
+  }
+
+  /** Runs `fn` in a transaction; it commits when `fn` resolves and rolls back if it throws. */
+  transaction<T>(fn: (trx: Transaction<Database>) => Promise<T>): Promise<T> {
+    return this.db.transaction().execute(fn);
+  }
+
+  /**
+   * Runs `fn` in a transaction scoped to one tenant: `app.current_tenant` is set with
+   * transaction-local semantics (`SET LOCAL`), so it is cleared on commit/rollback and never
+   * leaks to the next user of the pooled connection. RLS policies read it (BOS-011).
+   */
+  withTenant<T>(tenantId: string, fn: (trx: Transaction<Database>) => Promise<T>): Promise<T> {
+    if (!UUID.test(tenantId)) {
+      return Promise.reject(new Error(`Invalid tenant id: ${tenantId}`));
+    }
+    return this.transaction(async (trx) => {
+      // `SET LOCAL` cannot take a bind parameter; set_config(..., true) is the same thing.
+      await sql`select set_config('app.current_tenant', ${tenantId}, true)`.execute(trx);
+      return fn(trx);
     });
   }
 
-  async ping(): Promise<void> {
-    await this.pool.query('SELECT 1');
-  }
-
   async onModuleDestroy(): Promise<void> {
-    await this.pool.end();
+    await this.db.destroy();
   }
 }
