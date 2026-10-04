@@ -1,0 +1,113 @@
+# CI for every pull request and every push to main (BOS-005).
+# Mark both jobs as required checks on main in GitHub (Settings → Branches) so a red PR can't merge.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A newer push to the same branch cancels the run that's still going.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Format, lint, typecheck, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # Installs the pnpm version pinned in package.json ("packageManager").
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Format
+        run: pnpm format:check
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build
+        run: pnpm build
+
+  database:
+    name: Database (migrations, RLS, tenant isolation)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: bos
+          POSTGRES_PASSWORD: bos
+          POSTGRES_DB: bos
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bos -d bos"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      # Same split as local dev (.env.example): the API's restricted login and the owner.
+      DATABASE_URL: postgres://bos_api:bos_api@localhost:5432/bos
+      MIGRATION_DATABASE_URL: postgres://bos:bos@localhost:5432/bos
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply migrations
+        run: pnpm db:migrate
+
+      - name: Create the API login role
+        run: pnpm db:dev-role
+
+      # Fails if any table with tenant_id lacks RLS or the tenant_isolation policy, if the API
+      # login could bypass RLS, or if one tenant can read or write another tenant's rows.
+      - name: Verify roles, RLS and tenant isolation
+        run: pnpm db:verify
+
+      # Every migration's `down` must work: roll all the way back, then forward again.
+      - name: Roll back every migration
+        run: |
+          for i in $(seq 1 200); do
+            status="$(pnpm --silent db:status)" || { echo "$status"; exit 1; }
+            if ! grep -q 'applied' <<< "$status"; then
+              echo "All migrations rolled back"
+              exit 0
+            fi
+            pnpm db:rollback
+          done
+          echo "Still applied migrations after 200 rollbacks" >&2
+          exit 1
+
+      - name: Re-apply migrations and verify again
+        run: |
+          pnpm db:migrate
+          pnpm db:dev-role
+          pnpm db:verify

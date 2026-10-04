@@ -1,5 +1,7 @@
 # BOS — Business Operating System
 
+[![CI](https://github.com/zoogor95/business-operating-system/actions/workflows/ci.yml/badge.svg)](https://github.com/zoogor95/business-operating-system/actions/workflows/ci.yml)
+
 A configurable, multi-tenant business management platform for small businesses.
 See `docs/` for the architecture notes and backlog.
 
@@ -163,6 +165,19 @@ Run a script in one package directly with a filter, e.g. `pnpm --filter @bos/api
     [Conventional Commits](https://www.conventionalcommits.org), e.g.
     `feat(sales): add deposit payments (BOS-051)`. Allowed types: `feat`, `fix`, `chore`,
     `docs`, `refactor`, `test`, `perf`, `build`, `ci`, `style`, `revert`.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every pull request and every push to `main`, in two jobs:
+
+| Job                                | What it runs                                                                                                                                                        |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Format, lint, typecheck, build** | `pnpm install --frozen-lockfile`, `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm build`                                                                  |
+| **Database**                       | A Postgres 16 service, then `pnpm db:migrate`, `pnpm db:dev-role`, `pnpm db:verify`; then every migration is rolled back and re-applied, and `db:verify` runs again |
+
+Run the same thing locally before pushing: `pnpm format:check && pnpm lint && pnpm typecheck && pnpm build`, and `pnpm db:verify` with the stack up. Unit and integration tests join the pipeline with the test harness (BOS-006).
+
+To make the checks block merging, in GitHub go to **Settings → Branches → Add branch ruleset** (or classic branch protection) for `main`, enable **Require status checks to pass**, and select both jobs.
 
 ## Smoke test
 
