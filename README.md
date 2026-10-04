@@ -48,12 +48,12 @@ cp .env.example .env   # once; Docker Compose and the API both read it
 pnpm infra:up          # docker compose up -d --wait
 ```
 
-| Service     | Host address          | Notes                                       |
-| ----------- | --------------------- | ------------------------------------------- |
-| Postgres 16 | `localhost:5433`      | user / password / db: `bos` / `bos` / `bos` |
-| Redis 7     | `localhost:6379`      | append-only persistence                     |
-| Mailpit     | SMTP `localhost:1025` | catches every email the API sends in dev    |
-|             | http://localhost:8025 | web inbox                                   |
+| Service     | Host address          | Notes                                        |
+| ----------- | --------------------- | -------------------------------------------- |
+| Postgres 16 | `localhost:5433`      | owner / password / db: `bos` / `bos` / `bos` |
+| Redis 7     | `localhost:6379`      | append-only persistence                      |
+| Mailpit     | SMTP `localhost:1025` | catches every email the API sends in dev     |
+|             | http://localhost:8025 | web inbox                                    |
 
 Postgres is published on **5433**, not 5432, so it never collides with a Postgres installed
 directly on your machine. Data lives in named volumes (`bos_postgres-data`, `bos_redis-data`);
@@ -69,9 +69,14 @@ see [ADR-0001](docs/adr/0001-kysely-for-queries-and-migrations.md) for why.
 
 ```bash
 pnpm db:migrate    # apply all pending migrations
+pnpm db:dev-role   # once per database: create the API's login role (local only)
+pnpm db:verify     # check roles, RLS policies and tenant isolation
 pnpm db:rollback   # undo the most recent one
 pnpm db:status     # list applied / pending
 ```
+
+Data model and rules: [docs/erd.md](docs/erd.md) and
+[docs/database-conventions.md](docs/database-conventions.md).
 
 - Migrations live in `apps/api/src/db/migrations/NNNN_name.ts` as `up`/`down` functions
   (mostly raw SQL via Kysely's `sql` template). Add the next number and register it in
@@ -81,6 +86,45 @@ pnpm db:status     # list applied / pending
   `withTenant(tenantId, fn)` for anything tenant-scoped: it sets `app.current_tenant` for that
   transaction only (`SET LOCAL` semantics), which RLS policies read via `current_tenant_id()`.
   Run every query of the unit of work on the `trx` passed to `fn`.
+
+### Two database roles, and Row-Level Security
+
+- **The API** connects with `DATABASE_URL` as `bos_api`, a member of `bos_app` (migration 0003):
+  no superuser, no `BYPASSRLS`. Every tenant-scoped table has RLS enabled and forced, so outside
+  `withTenant()` those tables read as empty and reject writes, and inside it only that tenant's
+  rows exist. A missing `WHERE tenant_id = …` can't leak data; Postgres refuses.
+- **Migrations**, `db:verify` and `db:dev-role` connect with `MIGRATION_DATABASE_URL` as the
+  database owner (`bos` locally).
+- `pnpm db:dev-role` reads the user and password from `DATABASE_URL`, creates that login role and
+  grants it `bos_app`. It only runs against localhost. In staging and production, create the
+  login role yourself with a real password and `grant bos_app to <login>`.
+- Rolling back migration 0003 drops `bos_app`; after re-applying it, run `pnpm db:dev-role`
+  again.
+
+### Creating a tenant-scoped table
+
+Use the helpers in `apps/api/src/db/schema.ts` instead of writing the boilerplate by hand:
+
+```ts
+import { type Kysely, sql } from 'kysely';
+import { createTenantTable } from '../schema';
+
+export async function up(db: Kysely<unknown>): Promise<void> {
+  await createTenantTable(db, 'customers', ['full_name text not null', 'phone_e164 text'], {
+    softDelete: true,
+  });
+}
+
+export async function down(db: Kysely<unknown>): Promise<void> {
+  await sql`drop table customers`.execute(db);
+}
+```
+
+It adds `id`, `tenant_id` (FK to `tenants`), the base columns (`created_at`/`_by`,
+`updated_at`/`_by`, and `deleted_at` with `softDelete`), `unique (tenant_id, id)` for composite
+foreign keys, the `updated_at` trigger, and RLS with the `tenant_isolation` policy. In
+`database.ts`, give the row type `extends TenantScoped` (and `SoftDeletable`).
+`pnpm db:verify` fails if any table with a `tenant_id` column is missing RLS or the policy.
 
 ## Scripts (run from the repo root)
 
@@ -98,6 +142,8 @@ pnpm db:status     # list applied / pending
 | `pnpm infra:reset` / `infra:logs`           | Stop the stack and delete its data volumes / follow container logs       |
 | `pnpm db:migrate` / `db:rollback`           | Apply pending migrations / undo the latest one                           |
 | `pnpm db:status`                            | List applied and pending migrations                                      |
+| `pnpm db:dev-role`                          | Create the API's local login role (`bos_api`, member of `bos_app`)       |
+| `pnpm db:verify`                            | Check roles, RLS on every tenant table and tenant isolation              |
 
 Run a script in one package directly with a filter, e.g. `pnpm --filter @bos/api build`.
 
@@ -120,7 +166,7 @@ Run a script in one package directly with a filter, e.g. `pnpm --filter @bos/api
 
 ## Smoke test
 
-After `pnpm infra:up`, `pnpm db:migrate` and `pnpm dev`, open http://localhost:5173 and http://localhost:5174. Each page calls
+After `pnpm infra:up`, `pnpm db:migrate`, `pnpm db:dev-role` and `pnpm dev`, open http://localhost:5173 and http://localhost:5174. Each page calls
 `GET /api/health` through the Vite dev proxy and lists the core modules imported from
 `@bos/shared` — if you see "✅ bos-api is up", all three apps and the shared package are wired
 correctly. You can also hit http://localhost:3000/api/health directly.
@@ -135,4 +181,4 @@ correctly. You can also hit http://localhost:3000/api/health directly.
 ## What's next
 
 Tracked in `docs/bos-backlog.csv`: CI (BOS-005), test harness (BOS-006), typed config
-(BOS-007), tenants table (BOS-010).
+(BOS-007), per-request tenant context (BOS-012), users and login (BOS-014).

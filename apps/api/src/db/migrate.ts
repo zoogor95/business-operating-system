@@ -2,7 +2,7 @@
 // Built output runs the same way: `node dist/db/migrate.js <command>`.
 import { Logger } from '@nestjs/common';
 import { type MigrationResultSet, Migrator } from 'kysely/migration';
-import { requireEnv } from '../env';
+import { migrationDatabaseUrl } from '../env';
 import { createDb } from './database';
 import { migrations } from './migrations';
 
@@ -17,7 +17,8 @@ async function main(): Promise<void> {
     throw new Error(`Usage: migrate <${COMMANDS.join('|')}>`);
   }
 
-  const db = createDb(requireEnv('DATABASE_URL'));
+  // Runs as the database owner: the API's own login cannot change the schema (BOS-011).
+  const db = createDb(migrationDatabaseUrl());
   const migrator = new Migrator({
     db,
     provider: { getMigrations: () => Promise.resolve(migrations) },
