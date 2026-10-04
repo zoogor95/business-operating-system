@@ -41,7 +41,7 @@ erDiagram
     }
     users {
         uuid id PK
-        text email UK "global identity, citext"
+        text email UK "global identity, stored lower-case"
         text password_hash "argon2id"
         text full_name
         timestamptz email_verified_at
@@ -453,6 +453,6 @@ These need a decision before or during the ticket named.
 1. **Deposit accounting (BOS-062):** post deposits to a _Customer deposits_ liability and recognise revenue at completion (recommended, matches "sale happens at pickup"), or recognise revenue when the order is created?
 2. **Primary key generation:** decided in BOS-010: `gen_random_uuid()` (v4, built in). UUIDv7 can still be adopted later without a schema change.
 3. **Cross-tenant FK safety:** decided in BOS-010: composite foreign keys `(tenant_id, x_id) → (tenant_id, id)`. `createTenantTable()` adds the `unique (tenant_id, id)` they need to every tenant table.
-4. **`users.email` case:** `citext` extension or lower-cased unique index? (The draft assumes `citext`.)
+4. **`users.email` case:** decided in BOS-014: emails are stored trimmed and lower-cased (a check constraint enforces it), so a plain unique constraint is case-insensitive. No `citext` extension needed.
 5. **Prescription storage:** typed columns per eye (drafted) vs. one `jsonb`. Typed columns validate better and are easier to report on. Revisit if contact-lens Rx needs very different fields.
 6. **Multi-currency:** one currency per tenant for now (`tenants.currency`). Add a currency column to money tables only if a tenant ever needs mixed currencies.

@@ -128,6 +128,22 @@ foreign keys, the `updated_at` trigger, and RLS with the `tenant_isolation` poli
 `database.ts`, give the row type `extends TenantScoped` (and `SoftDeletable`).
 `pnpm db:verify` fails if any table with a `tenant_id` column is missing RLS or the policy.
 
+### Users and sign-in (BOS-014)
+
+- `users` is a platform table: one row per person, with an argon2id password hash. Emails are
+  stored lower-cased, so sign-in is case-insensitive.
+- `tenant_memberships` links a user to a business with a role (`owner` or `staff` for now). It's
+  tenant-scoped, plus a read-only `member_self` policy: inside `DatabaseService.withUser(userId, …)`
+  a user can list their memberships in every business, which the login response needs.
+- Invitation links are `<tenant id>.<secret>`; only a SHA-256 of the secret is stored. They work
+  once and expire after 7 days. A new user sets their password when accepting; an existing user
+  must enter their current password to join another business.
+- Endpoints: `POST /api/auth/login` (`email`, `password`) returns the user and their businesses;
+  `POST /api/auth/invitations/accept` (`token`, `password`, optional `fullName`). Session tokens
+  arrive in BOS-015, invitation emails in BOS-016.
+- Try it locally: `pnpm dev:invite <tenant-slug> <email> [owner|staff]` creates the tenant if
+  needed and prints a token plus the request to accept it.
+
 ## Scripts (run from the repo root)
 
 | Command                                     | What it does                                                             |
@@ -145,6 +161,7 @@ foreign keys, the `updated_at` trigger, and RLS with the `tenant_isolation` poli
 | `pnpm db:migrate` / `db:rollback`           | Apply pending migrations / undo the latest one                           |
 | `pnpm db:status`                            | List applied and pending migrations                                      |
 | `pnpm db:dev-role`                          | Create the API's local login role (`bos_api`, member of `bos_app`)       |
+| `pnpm dev:invite <slug> <email> [role]`     | Local only: create a tenant if needed and print an invitation token      |
 | `pnpm db:verify`                            | Check roles, RLS on every tenant table and tenant isolation              |
 
 Run a script in one package directly with a filter, e.g. `pnpm --filter @bos/api build`.

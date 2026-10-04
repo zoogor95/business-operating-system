@@ -22,6 +22,7 @@
     "db:status": "pnpm --filter @bos/api migrate status",
     "db:dev-role": "pnpm --filter @bos/api dev-role",
     "db:verify": "pnpm --filter @bos/api verify-db",
+    "dev:invite": "pnpm --filter @bos/api dev-invite",
     "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

@@ -9,13 +9,15 @@
     "typecheck": "tsc --noEmit",
     "migrate": "tsx src/db/migrate.ts",
     "dev-role": "tsx src/db/dev-role.ts",
-    "verify-db": "tsx src/db/verify.ts"
+    "verify-db": "tsx src/db/verify.ts",
+    "dev-invite": "tsx src/db/dev-invite.ts"
   },
   "dependencies": {
     "@bos/shared": "workspace:*",
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-express": "^11.0.0",
+    "@node-rs/argon2": "^2.2.1",
     "ioredis": "^6.0.0",
     "kysely": "^0.29.6",
     "pg": "^8.23.0",

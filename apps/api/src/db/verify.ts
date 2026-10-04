@@ -40,6 +40,7 @@ async function main(): Promise<void> {
       .execute(async (trx) => {
         await checkTenantTableHelper(trx);
         await checkIsolation(trx);
+        await checkMemberships(trx);
         throw new Rollback();
       })
       .catch((err: unknown) => {
@@ -184,6 +185,53 @@ async function checkIsolation(trx: Transaction<Database>): Promise<void> {
   );
 
   await sql`reset role`.execute(trx);
+}
+
+/** BOS-014: a signed-in user reads their own memberships everywhere, but changes none. */
+async function checkMemberships(trx: Transaction<Database>): Promise<void> {
+  const user = await trx
+    .insertInto('users')
+    .values({ email: 'zz-verify@example.test' })
+    .returning('id')
+    .executeTakeFirstOrThrow();
+  for (const tenantId of [TENANT_A, TENANT_B]) {
+    await setTenant(trx, tenantId);
+    await trx
+      .insertInto('tenant_memberships')
+      .values({ tenant_id: tenantId, user_id: user.id, role: 'staff', status: 'active' })
+      .execute();
+  }
+
+  await sql`set local role ${sql.id(APP_ROLE)}`.execute(trx);
+  const count = async (): Promise<number> => {
+    const { rows } = await sql<{ n: number }>`
+      select count(*)::int as n from tenant_memberships
+    `.execute(trx);
+    return rows[0]?.n ?? -1;
+  };
+
+  await setTenant(trx, '');
+  await setUser(trx, user.id);
+  check((await count()) === 2, 'A signed-in user sees their memberships in every tenant');
+
+  await setUser(trx, '');
+  await setTenant(trx, TENANT_A);
+  check((await count()) === 1, 'Tenant A sees only its own memberships');
+
+  await setUser(trx, user.id);
+  const moved = await sql`
+    update tenant_memberships set role = 'owner' where tenant_id = ${TENANT_B}
+  `.execute(trx);
+  check(
+    moved.numAffectedRows === 0n,
+    "A user can't change their membership in another tenant (member_self is read-only)",
+  );
+
+  await sql`reset role`.execute(trx);
+}
+
+async function setUser(trx: Transaction<Database>, userId: string): Promise<void> {
+  await sql`select set_config('app.current_user', ${userId}, true)`.execute(trx);
 }
 
 async function setTenant(trx: Transaction<Database>, tenantId: string): Promise<void> {
