@@ -39,6 +39,21 @@ export class DatabaseService implements OnModuleDestroy {
     });
   }
 
+  /**
+   * Runs `fn` in a transaction on behalf of a signed-in user, before any tenant is chosen:
+   * `app.current_user` is set (transaction-local) so the `member_self` policy lets them read
+   * their own memberships in every tenant (BOS-014). Combine with a tenant via `withTenant`.
+   */
+  withUser<T>(userId: string, fn: (trx: Transaction<Database>) => Promise<T>): Promise<T> {
+    if (!UUID.test(userId)) {
+      return Promise.reject(new Error(`Invalid user id: ${userId}`));
+    }
+    return this.transaction(async (trx) => {
+      await sql`select set_config('app.current_user', ${userId}, true)`.execute(trx);
+      return fn(trx);
+    });
+  }
+
   async onModuleDestroy(): Promise<void> {
     await this.db.destroy();
   }

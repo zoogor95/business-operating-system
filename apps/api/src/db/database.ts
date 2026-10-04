@@ -40,12 +40,43 @@ export interface TenantsTable {
   updated_at: Generated<Date>;
 }
 
+/** Platform table (no RLS): one row per person, across every business they belong to. */
+export interface UsersTable {
+  id: Generated<string>;
+  /** Trimmed and lower-cased; unique. */
+  email: string;
+  /** argon2id; null until the user accepts their first invitation. */
+  password_hash: string | null;
+  full_name: Generated<string>;
+  email_verified_at: Date | null;
+  last_login_at: Date | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+/** Fixed roles for the MVP; replaced by the roles table in BOS-021. */
+export type MembershipRole = 'owner' | 'staff';
+export type MembershipStatus = 'invited' | 'active' | 'disabled';
+
+/** Which businesses a user belongs to. Tenant-scoped, plus the read-only `member_self` policy. */
+export interface TenantMembershipsTable extends TenantScoped {
+  user_id: string;
+  role: MembershipRole;
+  status: Generated<MembershipStatus>;
+  /** SHA-256 of the secret part of the invitation token; null once accepted. */
+  invite_token_hash: string | null;
+  invite_expires_at: Date | null;
+  invited_by: string | null;
+}
+
 /**
  * Table name → row type, used by Kysely to type-check queries.
  * Add each table here in the same PR as the migration that creates it.
  */
 export interface Database {
   tenants: TenantsTable;
+  users: UsersTable;
+  tenant_memberships: TenantMembershipsTable;
 }
 
 /** Builds a Kysely instance over its own `pg` pool; `destroy()` ends the pool. */
