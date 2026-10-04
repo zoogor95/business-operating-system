@@ -20,6 +20,8 @@
     "db:migrate": "pnpm --filter @bos/api migrate latest",
     "db:rollback": "pnpm --filter @bos/api migrate down",
     "db:status": "pnpm --filter @bos/api migrate status",
+    "db:dev-role": "pnpm --filter @bos/api dev-role",
+    "db:verify": "pnpm --filter @bos/api verify-db",
     "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

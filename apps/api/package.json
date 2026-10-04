@@ -7,7 +7,9 @@
     "dev": "nest start --watch",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit",
-    "migrate": "tsx src/db/migrate.ts"
+    "migrate": "tsx src/db/migrate.ts",
+    "dev-role": "tsx src/db/dev-role.ts",
+    "verify-db": "tsx src/db/verify.ts"
   },
   "dependencies": {
     "@bos/shared": "workspace:*",

@@ -451,8 +451,8 @@ Every hop has a table and a foreign key, and none of the core tables hold optica
 These need a decision before or during the ticket named.
 
 1. **Deposit accounting (BOS-062):** post deposits to a _Customer deposits_ liability and recognise revenue at completion (recommended, matches "sale happens at pickup"), or recognise revenue when the order is created?
-2. **Primary key generation (BOS-010):** `gen_random_uuid()` (v4, built in) vs. UUIDv7 generated in the app for better index locality. The draft assumes v4 for simplicity; v7 can be adopted later without a schema change.
-3. **Cross-tenant FK safety (BOS-011):** composite foreign keys `(tenant_id, x_id) → (tenant_id, id)` make it impossible for a row to point at another tenant's row, even by mistake. They cost a unique index on `(tenant_id, id)` per parent. The conventions doc adopts them for tenant-to-tenant references.
+2. **Primary key generation:** decided in BOS-010: `gen_random_uuid()` (v4, built in). UUIDv7 can still be adopted later without a schema change.
+3. **Cross-tenant FK safety:** decided in BOS-010: composite foreign keys `(tenant_id, x_id) → (tenant_id, id)`. `createTenantTable()` adds the `unique (tenant_id, id)` they need to every tenant table.
 4. **`users.email` case:** `citext` extension or lower-cased unique index? (The draft assumes `citext`.)
 5. **Prescription storage:** typed columns per eye (drafted) vs. one `jsonb`. Typed columns validate better and are easier to report on. Revisit if contact-lens Rx needs very different fields.
 6. **Multi-currency:** one currency per tenant for now (`tenants.currency`). Add a currency column to money tables only if a tenant ever needs mixed currencies.
